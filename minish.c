@@ -78,10 +78,10 @@ arguments * split_args(const char * input) {
         str = strdup(input);
         while ((token = strsep(&str, " \t\r\n"))) {
             if (strcmp(token, "<") == 0) {
-                args->input = 1;
+                args->input = args->arg_count;
             }
             else if (strcmp(token, ">") == 0) {
-                args->output = 1;
+                args->output = args->arg_count;
             }
             args->arg_var[args->arg_count] = token;
             args->arg_count += 1;
@@ -90,9 +90,8 @@ arguments * split_args(const char * input) {
         if (strcmp(args->arg_var[args->arg_count - 1], "&") == 0) {
             args->background = 1;
             args->arg_count -= 1;
-            printf("%s\n", args->arg_var[args->arg_count]);
         }
-        args->arg_var[(args->arg_count)++] = NULL;
+        args->arg_var[args->arg_count] = NULL;
         free(str);
 
     }
@@ -112,18 +111,22 @@ void execute(arguments * args) {
         pid = fork();
         if (pid == 0) {
             if (args->input) {
-                int fd = open(args->arg_var[args->arg_count - 1], O_WRONLY | O_CLOEXEC);
-                if (dup2(0, fd) == -1) {
+                int fd = open(args->arg_var[args->input + 1], O_RDONLY | O_CLOEXEC);
+                if (dup2(fd, 0) == -1) {
                     perror("Error while using dup");
                     exit(EXIT_FAILURE);
                 }
+                args->arg_var[(args->input)++] = NULL;
+                args->arg_var[args->input] = NULL;
             }
             if (args->output) {
-                int fd = open(args->arg_var[args->arg_count - 1], O_WRONLY | O_CLOEXEC);
-                if (dup2(0, fd) == -1) {
+                int fd = open(args->arg_var[args->output + 1], O_WRONLY | O_CLOEXEC | O_CREAT, 0644);
+                if (dup2(fd, 1) == -1) {
                     perror("Error while using dup");
                     exit(EXIT_FAILURE);
                 }
+                args->arg_var[(args->output)++] = NULL;
+                args->arg_var[args->output] = NULL;
             }
             if (execvp(
                     args->arg_var[0],
