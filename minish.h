@@ -14,6 +14,7 @@ typedef struct {
 } arguments;
 
 arguments * split_args(const char * input);
+void split_args_delete(arguments * args);
 void execute(const char * input);
 
 #endif //MINISH_MINISH_H
