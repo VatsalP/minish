@@ -18,13 +18,15 @@ int main(int argc, char ** argv) {
     while (1) {
         char * input = readline(PROMPT);
         add_history(input);
-        if (strcmp(input, "exit") == 0) {
+        if (strcmp(input, "exit") == 0) { // Builtins xd
             // cleanup();
             free(input);
             break;
         }
-        else
-            execute(input);
+        else {
+            arguments *args = split_args(input);
+            execute(args);
+        }
         free(input);
     }
     return 0;
@@ -60,13 +62,15 @@ arguments * split_args(const char * input) {
     args->arg_var = calloc(MAX_ARGS, sizeof(char *));
 
     char * token, * str;
-
-    str = strdup(input);
-    while((token = strsep(&str," \t\r\n"))) {
-        args->arg_var[args->arg_count] = token;
-        args->arg_count += 1;
+    if (strcmp(input, "") != 0) {
+        str = strdup(input);
+        while ((token = strsep(&str, " \t\r\n"))) {
+            args->arg_var[args->arg_count] = token;
+            args->arg_count += 1;
+        }
+        args->arg_var[(args->arg_count)++] = NULL;
+        free(str);
     }
-    free(str);
     return args;
 }
 
@@ -75,15 +79,32 @@ arguments * split_args(const char * input) {
  *
  * @param input - user input
  */
-void execute(const char * input) {
-    arguments * args = split_args(input);
+void execute(arguments * args) {
+    pid_t pid;
+    int status;
+
+    if (args->arg_count > 0) {
+        pid = fork();
+        if (pid == 0) {
+            if (execvp(
+                    args->arg_var[0],
+                    args->arg_var
+            ) == -1) {
+                perror("Error while executing exec");
+                exit(EXIT_FAILURE);
+            };
+        } else if (pid == -1) {
+            perror("Error while creating child");
+            exit(EXIT_FAILURE);
+        } else { // Parent ze shell
+            wait(&status);
+        }
+    }
     /*
     printf("Arg count %d\n", args->arg_count);
     for (int i = 0; i < args->arg_count; i++) {
         fprintf(stdout, "%s ", args->arg_var[i]);
     }
     */
-
-    
     split_args_delete(args);
 }
