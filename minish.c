@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <signal.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -18,11 +19,18 @@ int main(int argc, char ** argv) {
     puts("Mini Shell Version 0.0.1");
     puts("Ctrl+C to exit");
 
-    while (1) {
+    if (signal(SIGINT, keyboard_interrupt) == SIG_ERR) {
+        perror("Can't catch sigint");
+        exit(EXIT_FAILURE);
+    }
+
+    for (;;) {
         char * input = read_line(PROMPT);
 
         if (strcmp(input, "exit") == 0) { // Builtins xd
-            // cleanup();
+            if (killpg(0, SIGTERM) == -1) {
+                perror("Error while using killpg");
+            }
             free(input);
             break;
         }
@@ -33,6 +41,15 @@ int main(int argc, char ** argv) {
         free(input);
     }
     return 0;
+}
+
+
+/***
+ * To handle ctrl+c
+ * @param signal
+ */
+void keyboard_interrupt(int signal) {
+    // Does nothing
 }
 
 
@@ -140,7 +157,7 @@ void execute(arguments * args) {
             exit(EXIT_FAILURE);
         } else { // Parent ze shell
             if (!args->background)
-                wait(&status);
+                waitpid(pid, &status, 0);
         }
     }
     split_args_delete(args);

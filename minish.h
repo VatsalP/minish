@@ -19,6 +19,8 @@ typedef struct {
     char ** arg_var;
 } arguments;
 
+void keyboard_interrupt(int signal);
+
 char * read_line(char * prompt);
 arguments * split_args(const char * input);
 void split_args_delete(arguments * args);
