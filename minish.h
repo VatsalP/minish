@@ -19,7 +19,13 @@ typedef struct {
     char ** arg_var;
 } arguments;
 
-void keyboard_interrupt(int signal);
+void minish_builtin(char ** args);
+void minish_kill(char ** args);
+void minish_exit(char ** args);
+
+int minish_num_builtin();
+
+void signal_handler(int signal);
 
 char * read_line(char * prompt);
 arguments * split_args(const char * input);

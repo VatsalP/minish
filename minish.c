@@ -11,30 +11,45 @@
 
 #include "minish.h"
 
-
+// Input buffer
 static char buffer[2048];
+
+// List of builtin commands, followed by their corresponding functions.
+char * builtin_str[] = {
+        "builtin",
+        "kill",
+        "exit"
+};
+
+void (* builtin_func[]) (char **) = {
+        &minish_builtin,
+        &minish_kill,
+        &minish_exit
+};
 
 
 int main(int argc, char ** argv) {
     puts("Mini Shell Version 0.0.1");
-    puts("Ctrl+C to exit");
+    puts("builtin to see the builtins");
 
-    if (signal(SIGINT, keyboard_interrupt) == SIG_ERR) {
+    if ((signal(SIGINT, signal_handler) == SIG_ERR) ||
+            (signal(SIGCHLD, signal_handler) == SIG_ERR)
+    ) {
         perror("Can't catch sigint");
         exit(EXIT_FAILURE);
     }
 
     for (;;) {
         char * input = read_line(PROMPT);
+        int built_in = 0;
 
-        if (strcmp(input, "exit") == 0) { // Builtins xd
-            if (killpg(0, SIGTERM) == -1) {
-                perror("Error while using killpg");
+        for (int i = 0; i < minish_num_builtin(); i++) {
+            if (strcmp(&input[0], builtin_str[i]) == 0) {
+                built_in = 1;
+                (*builtin_func[i])(&input);
             }
-            free(input);
-            break;
         }
-        else {
+        if (!built_in) {
             arguments *args = split_args(input);
             execute(args);
         }
@@ -44,12 +59,45 @@ int main(int argc, char ** argv) {
 }
 
 
+void minish_builtin(char ** args) {
+    puts("Mini Shell Version 0.0.1");
+    puts("Builtins are:");
+    for (int i = 0; i < minish_num_builtin(); i++) {
+        printf("%d: %s\n", (i+1), builtin_str[i]);
+    }
+}
+
+void minish_kill(char ** args) {
+    pid_t pid = (pid_t) atoi(args[1]);
+    if (!pid)
+        puts("Need a valid pid");
+
+    if (pid && kill(pid, SIGTERM) == -1)
+        perror("Error while using kill:");
+}
+
+void minish_exit(char ** args) {
+    killpg(0, SIGTERM);
+    exit(EXIT_SUCCESS);
+}
+
+/***
+ * To find how many builtins are there
+ * @return no. of builtins
+ */
+int minish_num_builtin() {
+    return sizeof(builtin_str)/ sizeof(char *);
+}
+
+
 /***
  * To handle ctrl+c
  * @param signal
  */
-void keyboard_interrupt(int signal) {
+void signal_handler(int signal) {
     // Does nothing
+    if (signal == SIGCHLD)
+        wait(NULL);
 }
 
 
