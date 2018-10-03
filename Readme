@@ -1,0 +1,11 @@
+Assignment 1 - CS550 - PART A - Minish
+
+Vatsal Parekh
+
+Run make to compile program
+$ make
+
+It will create a program with name minish
+
+run it using
+$ ./minish
