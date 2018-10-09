@@ -55,7 +55,6 @@ int main(int argc, char ** argv) {
         }
         free(input);
     }
-    return 0;
 }
 
 

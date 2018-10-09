@@ -8,9 +8,10 @@
 #define PROMPT "minish> "
 #define MAX_ARGS 66
 
-// TODO
-// add input fd and output fd
-// in struct
+typedef struct {
+    
+} pipe_info;
+
 typedef struct {
     int arg_count;
     int background;
