@@ -22,7 +22,9 @@ typedef struct {
     arguments * pipe_command;
 } pipe_info;
 
+char * trim_white_space(char * str);
 
+void minish_cd(char ** args);
 void minish_builtin(char ** args);
 void minish_kill(char ** args);
 void minish_exit(char ** args);
@@ -33,8 +35,7 @@ void signal_handler(int signal);
 
 char * read_line(char * prompt);
 pipe_info * split_pipe_args(const char * input);
-arguments * split_args(const char * input);
-void split_args_delete(arguments * args);
+arguments * split_args(const char * input, arguments *);
 void split_pipe_args_delete(pipe_info * store);
 void execute(
         arguments * args, int pipe_index, int pipe_last,

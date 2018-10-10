@@ -8,6 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <ctype.h>
 #include <errno.h>
 
 #include "minish.h"
@@ -19,13 +20,15 @@ static char buffer[2048];
 char * builtin_str[] = {
         "builtin",
         "kill",
-        "exit"
+        "exit",
+        "cd"
 };
 
 void (* builtin_func[]) (char **) = {
         &minish_builtin,
         &minish_kill,
-        &minish_exit
+        &minish_exit,
+        &minish_cd
 };
 
 
@@ -47,17 +50,21 @@ int main(int argc, char ** argv) {
         for (int i = 0; i < minish_num_builtin(); i++) {
             if (strcmp(&input[0], builtin_str[i]) == 0) {
                 built_in = 1;
-                (*builtin_func[i])(&input);
+                (* builtin_func[i])(&input);
             }
         }
         if (!built_in && (strcmp("", input) != 0)) {
             pipe_info * store = split_pipe_args(input);
             execute_pipe(store);
-            //arguments *args = split_args(input);
-            //execute(args);
         }
         free(input);
+        input = NULL;
     }
+}
+
+void minish_cd(char ** args) {
+    printf("CDING TO %s\n", args[1]);
+    chdir(args[1]);
 }
 
 
@@ -117,26 +124,46 @@ char * read_line(char * prompt) {
     return copy;
 }
 
-/***
- * Free mem allocated to argument struct
- * @param args arguments struct to be freed
- */
-void split_args_delete(arguments * args) {
-    free(args->arg_var);
-    free(args);
-}
-
 
 /***
  * Deallocate/Free mem of pipe_info *
  * @param store - pointer to pipe_info
  */
 void split_pipe_args_delete(pipe_info * store) {
-    //free(store->pipe_command);
-    //ls
+    for (int i = 0; i < MAX_PIPE; i++) {
+        free(store->pipe_command[i].arg_var);
+    }
+    free(store->pipe_command);
     free(store);
+    store = NULL;
 }
 
+
+/***
+ * To trim whitespace
+ * From https://stackoverflow.com/a/122721/5501519
+ * @param str
+ * @return string with whitespaces removed
+ */
+char * trim_white_space(char *str)
+{
+    char * end;
+
+    // Trim leading space
+    while(isspace((unsigned char) * str)) str++;
+
+    if(* str == 0)  // All spaces?
+        return str;
+
+    // Trim trailing space
+    end = str + strlen(str) - 1;
+    while(end > str && isspace((unsigned char) * end)) end--;
+
+    // Write new null terminator character
+    end[1] = '\0';
+
+    return str;
+}
 
 /***
  * Create pipe_info struct and execute structs
@@ -145,20 +172,22 @@ void split_pipe_args_delete(pipe_info * store) {
  * @return status of last foreground command
  */
 pipe_info * split_pipe_args(const char * input) {
-    pipe_info * store = malloc(sizeof(pipe_info));
+    pipe_info * store = (pipe_info *)malloc(sizeof(pipe_info));
     store->pipe_count = 0;
-    store->pipe_command = calloc(MAX_PIPE, sizeof(pipe_info *));
+    store->pipe_command = calloc(MAX_PIPE, sizeof(arguments));
 
     char * token, * str;
     if (strcmp(input, "") != 0) {
         str = strdup(input);
         int i = 0; // index counter for pipe_commands
         while((token = strsep(&str, "|"))) {
-            if (i > 0) token = token + i; // workaround...
-            store->pipe_command[i] = * (split_args(token)); // derefrencing... +)
+            token = trim_white_space(token);
+            //if (i > 0) token = token + i; // workaround...
+            store->pipe_command[i] = * split_args(token, &store->pipe_command[i]); // derefrencing... +)
             store->pipe_count = ++i;
         }
         free(str);
+        str = NULL;
     }
     return store;
 }
@@ -169,8 +198,8 @@ pipe_info * split_pipe_args(const char * input) {
  * @param input - command entered by user
  * @return prepared arguments struct
  */
-arguments * split_args(const char * input) {
-    arguments * args = malloc(sizeof(arguments));
+arguments * split_args(const char * input, arguments * args) {
+    //arguments * args = malloc(sizeof(arguments));
     args->arg_count = 0;
     args->background = 0;
     args->input = 0;
@@ -181,6 +210,7 @@ arguments * split_args(const char * input) {
     if (strcmp(input, "") != 0) {
         str = strdup(input);
         while ((token = strsep(&str, " \t\r\n")) != NULL) {
+            token = trim_white_space(token);
             if (strlen(token) == 0) continue;
             if (strcmp(token, "<") == 0) {
                 args->input = args->arg_count;
@@ -188,16 +218,16 @@ arguments * split_args(const char * input) {
             else if (strcmp(token, ">") == 0) {
                 args->output = args->arg_count;
             }
+            if (strcmp(token, "&") == 0) {
+                args->background = 1;
+                continue;
+            }
             args->arg_var[args->arg_count] = token;
             args->arg_count += 1;
         }
-        // check for background
-        if (strcmp(args->arg_var[args->arg_count - 1], "&") == 0) {
-            args->background = 1;
-            args->arg_count -= 1;
-        }
         args->arg_var[args->arg_count] = NULL;
         free(str);
+        str = NULL;
 
     }
     return args;
@@ -220,7 +250,7 @@ void execute_pipe(pipe_info * store) {
         int pipe_fd[2], input = -1;
         int i = 0;
         // for loop ze commands
-        for(; i < (store->pipe_count-1); i++) {
+        for (; i < (store->pipe_count - 1); i++) {
             if (pipe(pipe_fd) == -1) {
                 perror("PIPE Error");
                 exit(EXIT_FAILURE);
@@ -233,11 +263,12 @@ void execute_pipe(pipe_info * store) {
         // last command in pipe
         execute(&store->pipe_command[i], i, 1, input, 1, 0);
         close(input);
-    }
-    while (waitpid(-1, NULL, 0)) {
-        if (errno == ECHILD) {
-            // means we are done and there are no more child processes
-            break;
+
+        while (waitpid(-1, NULL, 0)) {
+            if (errno == ECHILD) {
+                // means we are done and there are no more child processes
+                break;
+            }
         }
     }
     split_pipe_args_delete(store);
@@ -298,6 +329,8 @@ void execute(
                 args->arg_var[(args->output)++] = NULL;
                 args->arg_var[args->output] = NULL;
             }
+
+            // now exec finally xd
             if (execvp(
                     args->arg_var[0],
                     args->arg_var
