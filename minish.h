@@ -24,10 +24,10 @@ typedef struct {
 
 char * trim_white_space(char * str);
 
-void minish_cd(char ** args);
-void minish_builtin(char ** args);
-void minish_kill(char ** args);
-void minish_exit(char ** args);
+void minish_cd(char * args);
+void minish_builtin(char * args);
+void minish_kill(char * args);
+void minish_exit(char * args);
 
 int minish_num_builtin();
 

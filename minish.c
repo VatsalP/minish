@@ -10,6 +10,7 @@
 #include <sys/types.h>
 #include <ctype.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include "minish.h"
 
@@ -18,17 +19,17 @@ static char buffer[2048];
 
 // List of builtin commands, followed by their corresponding functions.
 char * builtin_str[] = {
+        "cd",
         "builtin",
         "kill",
-        "exit",
-        "cd"
+        "exit"
 };
 
-void (* builtin_func[]) (char **) = {
+void (* builtin_func[]) (char *) = {
+        &minish_cd,
         &minish_builtin,
         &minish_kill,
         &minish_exit,
-        &minish_cd
 };
 
 
@@ -48,9 +49,9 @@ int main(int argc, char ** argv) {
         int built_in = 0;
 
         for (int i = 0; i < minish_num_builtin(); i++) {
-            if (strcmp(&input[0], builtin_str[i]) == 0) {
+            if (memcmp(&input[0], builtin_str[i], strlen(builtin_str[i])) == 0) {
                 built_in = 1;
-                (* builtin_func[i])(&input);
+                (* builtin_func[i])(input);
             }
         }
         if (!built_in && (strcmp("", input) != 0)) {
@@ -62,13 +63,18 @@ int main(int argc, char ** argv) {
     }
 }
 
-void minish_cd(char ** args) {
-    printf("CDING TO %s\n", args[1]);
-    chdir(args[1]);
+void minish_cd(char * args) {
+    arguments * arg = malloc(sizeof(arguments));
+    arg =  split_args(args, arg);
+    if(chdir(arg->arg_var[1]) == -1)
+        perror("Error while changing directory");
+    free(arg->arg_var);
+    free(arg);
+    arg = NULL;
 }
 
 
-void minish_builtin(char ** args) {
+void minish_builtin(char * args) {
     puts("Mini Shell Version 0.0.1");
     puts("Builtins are:");
     for (int i = 0; i < minish_num_builtin(); i++) {
@@ -76,16 +82,21 @@ void minish_builtin(char ** args) {
     }
 }
 
-void minish_kill(char ** args) {
-    pid_t pid = (pid_t) atoi(args[1]);
+void minish_kill(char * args) {
+    arguments * arg = malloc(sizeof(arguments));
+    arg =  split_args(args, arg);
+    pid_t pid = (pid_t) atoi(arg->arg_var[1]);
     if (!pid)
         puts("Need a valid pid");
 
     if (pid && kill(pid, SIGKILL) == -1)
         perror("Error while using kill:");
+    free(arg->arg_var);
+    free(arg);
+    arg = NULL;
 }
 
-void minish_exit(char ** args) {
+void minish_exit(char * args) {
     //killpg(0, SIGKILL);
     exit(EXIT_SUCCESS);
 }
