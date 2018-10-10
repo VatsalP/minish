@@ -8,6 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <errno.h>
 
 #include "minish.h"
 
@@ -49,9 +50,11 @@ int main(int argc, char ** argv) {
                 (*builtin_func[i])(&input);
             }
         }
-        if (!built_in) {
-            arguments *args = split_args(input);
-            execute(args);
+        if (!built_in && (strcmp("", input) != 0)) {
+            pipe_info * store = split_pipe_args(input);
+            execute_pipe(store);
+            //arguments *args = split_args(input);
+            //execute(args);
         }
         free(input);
     }
@@ -71,12 +74,12 @@ void minish_kill(char ** args) {
     if (!pid)
         puts("Need a valid pid");
 
-    if (pid && kill(pid, SIGTERM) == -1)
+    if (pid && kill(pid, SIGKILL) == -1)
         perror("Error while using kill:");
 }
 
 void minish_exit(char ** args) {
-    killpg(0, SIGTERM);
+    //killpg(0, SIGKILL);
     exit(EXIT_SUCCESS);
 }
 
@@ -123,6 +126,43 @@ void split_args_delete(arguments * args) {
     free(args);
 }
 
+
+/***
+ * Deallocate/Free mem of pipe_info *
+ * @param store - pointer to pipe_info
+ */
+void split_pipe_args_delete(pipe_info * store) {
+    //free(store->pipe_command);
+    //ls
+    free(store);
+}
+
+
+/***
+ * Create pipe_info struct and execute structs
+ *
+ * @param input - input string
+ * @return status of last foreground command
+ */
+pipe_info * split_pipe_args(const char * input) {
+    pipe_info * store = malloc(sizeof(pipe_info));
+    store->pipe_count = 0;
+    store->pipe_command = calloc(MAX_PIPE, sizeof(pipe_info *));
+
+    char * token, * str;
+    if (strcmp(input, "") != 0) {
+        str = strdup(input);
+        int i = 0; // index counter for pipe_commands
+        while((token = strsep(&str, "|"))) {
+            if (i > 0) token = token + i; // workaround...
+            store->pipe_command[i] = * (split_args(token)); // derefrencing... +)
+            store->pipe_count = ++i;
+        }
+        free(str);
+    }
+    return store;
+}
+
 /***
  * Create arguments struct and store input args in it
  *
@@ -140,7 +180,8 @@ arguments * split_args(const char * input) {
     char * token, * str;
     if (strcmp(input, "") != 0) {
         str = strdup(input);
-        while ((token = strsep(&str, " \t\r\n"))) {
+        while ((token = strsep(&str, " \t\r\n")) != NULL) {
+            if (strlen(token) == 0) continue;
             if (strcmp(token, "<") == 0) {
                 args->input = args->arg_count;
             }
@@ -162,19 +203,82 @@ arguments * split_args(const char * input) {
     return args;
 }
 
+
+ /***
+  * Execute ze pipeline xd
+  *
+  * @param store
+  * @param pipe_index
+  * @param pipe_last
+  */
+void execute_pipe(pipe_info * store) {
+    // for command without pipe
+    if (store->pipe_count == 1) {
+        execute(&store->pipe_command[0], 0, 1, -1, -1, 1);
+    }
+    else {
+        int pipe_fd[2], input = -1;
+        int i = 0;
+        // for loop ze commands
+        for(; i < (store->pipe_count-1); i++) {
+            if (pipe(pipe_fd) == -1) {
+                perror("PIPE Error");
+                exit(EXIT_FAILURE);
+            }
+            // meh
+            execute(&store->pipe_command[i], i, 0, input, pipe_fd[1], 0);
+            close(pipe_fd[1]); // close write in parent
+            input = pipe_fd[0]; // keep read end for next child
+        }
+        // last command in pipe
+        execute(&store->pipe_command[i], i, 1, input, 1, 0);
+        close(input);
+    }
+    while (waitpid(-1, NULL, 0)) {
+        if (errno == ECHILD) {
+            // means we are done and there are no more child processes
+            break;
+        }
+    }
+    split_pipe_args_delete(store);
+}
+
 /***
  * Execute user provided command
  *
  * @param input - user input
  */
-void execute(arguments * args) {
+void execute(
+        arguments * args, int pipe_index, int pipe_last,
+        int pipe_read, int pipe_write, int not_pipe
+        ) {
     pid_t pid;
     int status;
 
     if (args->arg_count > 0) {
         pid = fork();
         if (pid == 0) {
-            if (args->input) {
+
+            // read pipe end
+            if (!(not_pipe) && pipe_read > -1 && pipe_index != 0) {
+                if (dup2(pipe_read, 0) == -1) {
+                    perror("Error while using dup on pipe read end");
+                    exit(EXIT_FAILURE);
+                }
+                close(pipe_read);
+            }
+
+            // write pipe end
+            if (!(not_pipe) && pipe_write != 1) {
+                if (dup2(pipe_write, 1) == -1) {
+                    perror("Error while using dup on pipe write end");
+                    exit(EXIT_FAILURE);
+                }
+                close(pipe_write);
+            }
+
+            // for input redirection
+            if (args->input && pipe_index == 0) {
                 int fd = open(args->arg_var[args->input + 1], O_RDONLY | O_CLOEXEC);
                 if (dup2(fd, 0) == -1) {
                     perror("Error while using dup");
@@ -183,7 +287,9 @@ void execute(arguments * args) {
                 args->arg_var[(args->input)++] = NULL;
                 args->arg_var[args->input] = NULL;
             }
-            if (args->output) {
+
+            // for output redirection
+            if (args->output && pipe_last) {
                 int fd = open(args->arg_var[args->output + 1], O_WRONLY | O_CLOEXEC | O_CREAT, 0644);
                 if (dup2(fd, 1) == -1) {
                     perror("Error while using dup");
@@ -203,9 +309,9 @@ void execute(arguments * args) {
             perror("Error while creating child");
             exit(EXIT_FAILURE);
         } else { // Parent ze shell
-            if (!args->background)
+            if (!args->background && not_pipe)
                 waitpid(pid, &status, 0);
         }
     }
-    split_args_delete(args);
+    //split_args_delete(args);
 }
