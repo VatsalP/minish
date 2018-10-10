@@ -14,6 +14,7 @@
 
 #include "minish.h"
 
+
 // Input buffer
 static char buffer[2048];
 
@@ -288,7 +289,12 @@ void execute_pipe(pipe_info * store) {
 /***
  * Execute user provided command
  *
- * @param input - user input
+ * @param args - command to exec
+ * @param pipe_index - current pipe component
+ * @param pipe_last - is it?
+ * @param pipe_read - read side fd
+ * @param pipe_write - write side fd
+ * @param not_pipe - to be or not to be
  */
 void execute(
         arguments * args, int pipe_index, int pipe_last,
@@ -357,5 +363,4 @@ void execute(
                 waitpid(pid, &status, 0);
         }
     }
-    //split_args_delete(args);
 }
