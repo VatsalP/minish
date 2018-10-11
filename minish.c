@@ -17,6 +17,7 @@
 
 // Background pid array
 static pid_t background_array[MAX_BACKGROUND];
+static pid_t pipe_pid = 0;
 
 // Input buffer
 static char buffer[2048];
@@ -66,6 +67,8 @@ int main(int argc, char ** argv) {
             execute_pipe(store);
         }
         free(input);
+        input = NULL;
+        pipe_pid = 0;
     }
 }
 
@@ -126,6 +129,8 @@ void minish_exit(char * args) {
             }
         }
     }
+    free(args);
+    args = NULL;
     exit(EXIT_SUCCESS);
 }
 
@@ -168,6 +173,22 @@ char * read_line(char * prompt) {
     strcpy(copy, buffer);
     copy[strlen(copy)-1] = '\0';
     return copy;
+}
+
+
+/***
+ * Utility function to check if value is in array or not
+ *
+ * @param pid
+ * @param arr
+ * @param max
+ * @return 1 or 0 if yes or no
+ */
+int is_in_array(pid_t pid, pid_t arr[], int max) {
+    for (int i = 0; i < max; i++) {
+        if (pid == arr[i]) return 1;
+    }
+    return 0;
 }
 
 
@@ -220,6 +241,7 @@ char * trim_white_space(char *str)
 pipe_info * split_pipe_args(const char * input) {
     pipe_info * store = (pipe_info *)malloc(sizeof(pipe_info));
     store->pipe_count = 0;
+    store->background = 0;
     store->pipe_command = calloc(MAX_PIPE, sizeof(arguments));
 
     char * token, * str;
@@ -235,6 +257,8 @@ pipe_info * split_pipe_args(const char * input) {
         free(str);
         str = NULL;
     }
+    if (store->pipe_count > 1 && store->pipe_command[store->pipe_count].background)
+        store->background = 1;
     return store;
 }
 
@@ -290,7 +314,7 @@ arguments * split_args(const char * input, arguments * args) {
 void execute_pipe(pipe_info * store) {
     // for command without pipe
     if (store->pipe_count == 1) {
-        execute(&store->pipe_command[0], 0, 1, -1, -1, 1);
+        execute(&store->pipe_command[0], 0, 1, -1, -1, 1, 0);
     }
     else {
         int pipe_fd[2], input = -1;
@@ -302,12 +326,12 @@ void execute_pipe(pipe_info * store) {
                 exit(EXIT_FAILURE);
             }
             // meh
-            execute(&store->pipe_command[i], i, 0, input, pipe_fd[1], 0);
+            execute(&store->pipe_command[i], i, 0, input, pipe_fd[1], 0, store->background);
             close(pipe_fd[1]); // close write in parent
             input = pipe_fd[0]; // keep read end for next child
         }
         // last command in pipe
-        execute(&store->pipe_command[i], i, 1, input, 1, 0);
+        execute(&store->pipe_command[i], i, 1, input, 1, 0, store->background);
         close(input);
 
         while (waitpid(-1, NULL, 0)) {
@@ -329,10 +353,12 @@ void execute_pipe(pipe_info * store) {
  * @param pipe_read - read side fd
  * @param pipe_write - write side fd
  * @param not_pipe - to be or not to be
+ * @param pipe_background - meh
  */
 void execute(
         arguments * args, int pipe_index, int pipe_last,
-        int pipe_read, int pipe_write, int not_pipe
+        int pipe_read, int pipe_write, int not_pipe,
+        int pipe_background
         ) {
     pid_t pid;
     int status;
@@ -393,6 +419,16 @@ void execute(
             perror("Error while creating child");
             exit(EXIT_FAILURE);
         } else { // Parent ze shell
+            if (pipe_background) {
+                if(!pipe_pid && setpgid(pid, pid) == -1)
+                    perror("Error while setting pgid");
+                else {
+                    if(setpgid(pid, pipe_pid) == -1)
+                        perror("Error while setting pgid");
+
+                }
+            }
+
             if (args->background && not_pipe) {
                 if(setpgid(pid, pid) == -1)
                     perror("Error while setting pgid");

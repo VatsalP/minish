@@ -1,6 +1,7 @@
 //
 // Created by Vatsal Parekh on 9/18/18.
 //
+#include <sys/types.h>
 
 #ifndef MINISH_MINISH_H
 #define MINISH_MINISH_H
@@ -21,10 +22,12 @@ typedef struct {
 
 typedef struct {
     int pipe_count;
+    int background;
     arguments * pipe_command;
 } pipe_info;
 
 char * trim_white_space(char * str);
+int is_in_array(pid_t pid, pid_t arr[], int max);
 
 void minish_bg(char * args);
 void minish_cd(char * args);
@@ -42,7 +45,8 @@ arguments * split_args(const char * input, arguments *);
 void split_pipe_args_delete(pipe_info * store);
 void execute(
         arguments * args, int pipe_index, int pipe_last,
-        int pipe_read, int pipe_write, int not_pipe
+        int pipe_read, int pipe_write, int not_pipe,
+        int pipe_background
 );
 void execute_pipe(pipe_info * store);
 
