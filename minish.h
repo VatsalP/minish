@@ -8,6 +8,8 @@
 #define PROMPT "minish> "
 #define MAX_ARGS 66
 #define MAX_PIPE 66
+#define MAX_BACKGROUND 66
+
 
 typedef struct {
     int arg_count;
@@ -24,6 +26,7 @@ typedef struct {
 
 char * trim_white_space(char * str);
 
+void minish_bg(char * args);
 void minish_cd(char * args);
 void minish_builtin(char * args);
 void minish_kill(char * args);

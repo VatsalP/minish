@@ -15,18 +15,24 @@
 #include "minish.h"
 
 
+// Background pid array
+static pid_t background_array[MAX_BACKGROUND];
+
 // Input buffer
 static char buffer[2048];
 
 // List of builtin commands, followed by their corresponding functions.
 char * builtin_str[] = {
+        "bg",
         "cd",
         "builtin",
         "kill",
         "exit"
 };
 
+// ayy
 void (* builtin_func[]) (char *) = {
+        &minish_bg,
         &minish_cd,
         &minish_builtin,
         &minish_kill,
@@ -60,7 +66,15 @@ int main(int argc, char ** argv) {
             execute_pipe(store);
         }
         free(input);
-        input = NULL;
+    }
+}
+
+
+void minish_bg(char * args) {
+    for(int i = 0, j = 0; i < MAX_BACKGROUND; i++) {
+        if(background_array[i]) {
+            printf("%d: %d\n", j++, background_array[i]);
+        }
     }
 }
 
@@ -92,13 +106,26 @@ void minish_kill(char * args) {
 
     if (pid && kill(pid, SIGKILL) == -1)
         perror("Error while using kill:");
+
+    if (getpgrp() != getpgid(pid)) {
+        int i = 0;
+        while(background_array[i++] != pid && i < MAX_BACKGROUND);
+        background_array[--i] = 0;
+    }
     free(arg->arg_var);
     free(arg);
     arg = NULL;
 }
 
 void minish_exit(char * args) {
-    //killpg(0, SIGKILL);
+    for(int i = 0; i < MAX_BACKGROUND; i++) {
+        if(background_array[i]) {
+            if(kill(background_array[i], SIGKILL) == -1) {
+                fprintf(stderr, "Error while killing %d\n", background_array[i]);
+                perror("");
+            }
+        }
+    }
     exit(EXIT_SUCCESS);
 }
 
@@ -107,7 +134,7 @@ void minish_exit(char * args) {
  * @return no. of builtins
  */
 int minish_num_builtin() {
-    return sizeof(builtin_str)/ sizeof(char *);
+    return sizeof(builtin_str) / sizeof(char *);
 }
 
 
@@ -116,9 +143,16 @@ int minish_num_builtin() {
  * @param signal
  */
 void signal_handler(int signal) {
-    // Does nothing
-    if (signal == SIGCHLD)
-        wait(NULL);
+    // Does nothing for sigint
+    if (signal == SIGCHLD) {
+        pid_t child_pid = wait(NULL);
+        if (getpgrp() != getpgid(child_pid)) {
+            int i = 0;
+            while(background_array[i++] != child_pid && i < MAX_BACKGROUND);
+            background_array[--i] = 0;
+        }
+    }
+
 }
 
 
@@ -359,6 +393,14 @@ void execute(
             perror("Error while creating child");
             exit(EXIT_FAILURE);
         } else { // Parent ze shell
+            if (args->background && not_pipe) {
+                if(setpgid(pid, pid) == -1)
+                    perror("Error while setting pgid");
+                int i = 0;
+                while(background_array[i++] != 0 && i < MAX_BACKGROUND);
+                background_array[--i] = pid;
+            }
+
             if (!args->background && not_pipe)
                 waitpid(pid, &status, 0);
         }
