@@ -332,7 +332,6 @@ void execute_pipe(pipe_info * store) {
     else {
         int pipe_fd[2], input = -1;
         int i = 0;
-        int pipe_close[MAX_PIPE] = {0};
         // for loop ze commands
         for (; i < (store->pipe_count - 1); i++) {
             if (pipe(pipe_fd) == -1) {
@@ -441,7 +440,7 @@ void execute(
                     pipe_pid = pid;
                     int i = 0;
                     while (background_array[i++] != 0 && i < MAX_BACKGROUND);
-                    background_array[--i] = pid;
+                    background_array[--i] = pipe_pid;
                 }
                 if(setpgid(pid, pipe_pid) == -1)
                     perror("Error while setting pgid");
