@@ -55,6 +55,7 @@ int main(int argc, char ** argv) {
     for (;;) {
         char * input = read_line(PROMPT);
         int built_in = 0;
+        pipe_pid = 0;
 
         for (int i = 0; i < minish_num_builtin(); i++) {
             if (memcmp(&input[0], builtin_str[i], strlen(builtin_str[i])) == 0) {
@@ -68,7 +69,6 @@ int main(int argc, char ** argv) {
         }
         free(input);
         input = NULL;
-        pipe_pid = 0;
     }
 }
 
@@ -106,15 +106,28 @@ void minish_kill(char * args) {
     pid_t pid = (pid_t) atoi(arg->arg_var[1]);
     if (!pid)
         puts("Need a valid pid");
-
-    if (pid && kill(pid, SIGKILL) == -1)
-        perror("Error while using kill:");
-
+    int proceed = 1;
     if (getpgrp() != getpgid(pid)) {
-        int i = 0;
-        while(background_array[i++] != pid && i < MAX_BACKGROUND);
-        background_array[--i] = 0;
+        pid_t pgid = getpgid(pid);
+        int ret = is_in_array(pgid, background_array, MAX_BACKGROUND);
+        if (ret) {
+            int i = 0;
+            while(background_array[i++] != pgid && i < MAX_BACKGROUND);
+            background_array[--i] = 0;
+
+        } else {
+            int i = 0;
+            while(background_array[i++] != pid && i < MAX_BACKGROUND);
+            background_array[--i] = 0;
+        }
+        if (pid && killpg(pgid, SIGKILL) == -1)
+            perror("Error while using killpg");
+        proceed = 0;
     }
+
+    if (proceed && pid && kill(pid, SIGKILL) == -1)
+        perror("Error while using kill");
+
     free(arg->arg_var);
     free(arg);
     arg = NULL;
@@ -257,7 +270,7 @@ pipe_info * split_pipe_args(const char * input) {
         free(str);
         str = NULL;
     }
-    if (store->pipe_count > 1 && store->pipe_command[store->pipe_count].background)
+    if (store->pipe_count > 1 && store->pipe_command[store->pipe_count-1].background)
         store->background = 1;
     return store;
 }
@@ -319,6 +332,7 @@ void execute_pipe(pipe_info * store) {
     else {
         int pipe_fd[2], input = -1;
         int i = 0;
+        int pipe_close[MAX_PIPE] = {0};
         // for loop ze commands
         for (; i < (store->pipe_count - 1); i++) {
             if (pipe(pipe_fd) == -1) {
@@ -329,15 +343,18 @@ void execute_pipe(pipe_info * store) {
             execute(&store->pipe_command[i], i, 0, input, pipe_fd[1], 0, store->background);
             close(pipe_fd[1]); // close write in parent
             input = pipe_fd[0]; // keep read end for next child
+
         }
         // last command in pipe
         execute(&store->pipe_command[i], i, 1, input, 1, 0, store->background);
         close(input);
 
-        while (waitpid(-1, NULL, 0)) {
-            if (errno == ECHILD) {
-                // means we are done and there are no more child processes
-                break;
+        if (!store->background) {
+            while (waitpid(-1, NULL, 0)) {
+                if (errno == ECHILD) {
+                    // means we are done and there are no more child processes
+                    break;
+                }
             }
         }
     }
@@ -420,13 +437,14 @@ void execute(
             exit(EXIT_FAILURE);
         } else { // Parent ze shell
             if (pipe_background) {
-                if(!pipe_pid && setpgid(pid, pid) == -1)
-                    perror("Error while setting pgid");
-                else {
-                    if(setpgid(pid, pipe_pid) == -1)
-                        perror("Error while setting pgid");
-
+                if (!pipe_pid) {
+                    pipe_pid = pid;
+                    int i = 0;
+                    while (background_array[i++] != 0 && i < MAX_BACKGROUND);
+                    background_array[--i] = pid;
                 }
+                if(setpgid(pid, pipe_pid) == -1)
+                    perror("Error while setting pgid");
             }
 
             if (args->background && not_pipe) {
