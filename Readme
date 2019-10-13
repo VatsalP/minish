@@ -1,10 +1,6 @@
-Assignment 2 - CS550 - PART B - Minish
+A shell program with support for basic io redirection and pipe support.
 
-Vatsal Parekh
-
-Don't use it in your assignments =)
-
-Run make to compile program
+Run make or cmake to compile the program
 $ make
 
 It will create a program with name minish
